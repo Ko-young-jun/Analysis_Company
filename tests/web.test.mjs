@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {selectSeries,parseWorldBank,parseFred,collect} from '../lib/provider.mjs';
+import handler from '../api/indicators.js';
+test('arbitrary URLs and unregistered IDs cannot be fetched',()=>{assert.throws(()=>selectSeries('https://example.org'));});
+test('missing official observation remains null',()=>{const rows=parseWorldBank([{pages:1,lastupdated:'2025-01-01'},[{indicator:{id:'X'},countryiso3code:'KOR',date:'2024',value:null}]],'X',['KOR']);assert.equal(rows[0].value,null);assert.equal(rows[0].release_date,null);});
+test('wrong indicator and truncated pagination fail',()=>{assert.throws(()=>parseWorldBank([{pages:2},[]],'X',['KOR']));assert.throws(()=>parseWorldBank([{pages:1},[{indicator:{id:'Y'},countryiso3code:'KOR'}]],'X',['KOR']));});
+test('FRED monthly periods and missing values',()=>{assert.deepEqual(parseFred('observation_date,UNRATE\n2024-01-01,.\n','UNRATE','USA','M')[0].value,null);assert.equal(parseFred('observation_date,UNRATE\n2024-01-01,3\n','UNRATE','USA','M')[0].period,'2024-01');});
+test('source HTTP failures do not become empty success',async()=>{await assert.rejects(()=>collect('fred:UNRATE',async()=>({ok:false,status:503})));});
+test('API rejects missing id before network',async()=>{let status,body;const res={status(s){status=s;return this},json(b){body=b;return this}};await handler({method:'GET',query:{}},res);assert.equal(status,400);assert.match(body.error,/지표/);});
+test('API rejects writes',async()=>{let status;const res={setHeader(){},status(s){status=s;return this},json(){}};await handler({method:'POST'},res);assert.equal(status,405);});
